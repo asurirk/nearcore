@@ -84,29 +84,24 @@ impl Client {
         Ok(())
     }
 
-    #[allow(unused)]
-    fn validate_signature(&self, block: &BeaconBlock) -> bool {
-        // TODO: validate multisig
-        true
-    }
-
     /// Import a block. Returns true if it is successfully inserted into the chain
     fn import_block(&self, block: BeaconBlock) -> bool {
         if self.beacon_chain.is_known(&block.hash()) {
             return false;
         }
         let parent_hash = block.header().parent_hash();
-        if self.beacon_chain.is_known(&parent_hash) && self.validate_signature(&block) {
+        let last_block = self.beacon_chain.get_block(&BlockId::Hash(parent_hash));
+        if let Some(parent) = last_block {
+            // TODO: signature verification
+//            if !block.header.verify_signature(&parent.header.body.authority_proposal) {
+//                return false;
+//            }
             let (header, transactions) = block.deconstruct();
             let num_transactions = transactions.len();
             // we can unwrap because parent is guaranteed to exist
-            let last_header = self
-                .beacon_chain
-                .get_header(&BlockId::Hash(parent_hash))
-                .expect("Parent is known but header not found.");
             let apply_state = ApplyState {
-                root: last_header.body.merkle_root_state,
-                block_index: last_header.body.index,
+                root: parent.header.body.merkle_root_state,
+                block_index: parent.header.body.index,
                 parent_block_hash: parent_hash,
             };
             let (filtered_transactions, mut apply_result) =
@@ -119,7 +114,8 @@ impl Client {
             }
             self.state_db.commit(&mut apply_result.transaction).ok();
             // TODO: figure out where to store apply_result.authority_change_set.
-            let block = Block::new(header, filtered_transactions);
+            let mut block: BeaconBlock = Block::new(header, filtered_transactions);
+            block.update_weight(parent.weight, &parent.header.body.authority_proposal);
             self.beacon_chain.insert_block(block);
             true
         } else {

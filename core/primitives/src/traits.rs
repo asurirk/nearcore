@@ -55,12 +55,14 @@ pub trait Header:
 pub trait Block: Debug + Clone + Send + Sync + Serialize + DeserializeOwned + Eq + 'static {
     type Header: Header;
     type Body;
+    type Weight: PartialOrd;
 
     fn header(&self) -> &Self::Header;
     fn body(&self) -> &Self::Body;
     fn deconstruct(self) -> (Self::Header, Self::Body);
     fn new(header: Self::Header, body: Self::Body) -> Self;
     fn hash(&self) -> CryptoHash;
+    fn weight(&self) -> Self::Weight;
 }
 
 /// Trait to abstract the way signing happens.

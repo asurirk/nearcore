@@ -84,7 +84,7 @@ impl Chain<BeaconBlock> for Client {
             apply_result.root,
             filtered_transactions,
         );
-        block.sign(&self.signer);
+        block.header.sign(&last_block.header.body.authority_proposal, &*self.signer);
         self.beacon_chain.insert_block(block.clone());
         block
     }

@@ -168,7 +168,7 @@ impl<B: Block> BlockChain<B> {
         let maybe_parent = self.get_header(&BlockId::Hash(block.header().parent_hash()));
         if let Some(_parent_details) = maybe_parent {
             // TODO: rewind parents if they were not processed somehow?
-            if block.header().index() > self.best_block.read().header().index() {
+            if block.weight() > self.best_block.read().weight() {
                 self.update_best_block(block);
             }
             false
@@ -225,12 +225,12 @@ impl<B: Block> BlockChain<B> {
 mod tests {
     extern crate beacon;
 
-    use std::sync::Arc;
-
-    use primitives::traits::Header;
+    use primitives::signer::InMemorySigner;
+    use primitives::traits::{Header,Signer};
     use primitives::types::MerkleHash;
+    use std::collections::HashMap;
     use storage::test_utils::create_memory_db;
-    use tests::beacon::types::BeaconBlock;
+    use tests::beacon::types::{AuthorityProposal, BeaconBlock};
 
     use super::*;
 
@@ -257,5 +257,44 @@ mod tests {
         assert_eq!(other_bc.best_block().hash(), block1.hash());
         assert_eq!(other_bc.best_block().header().index(), 1);
         assert_eq!(other_bc.get_block(&BlockId::Hash(block1.hash())).unwrap(), block1);
+    }
+
+    fn test_fork_choice_rule_helper(graph: Vec<(u32,u32,u32)>, expect: u32) {
+        let storage = Arc::new(create_memory_db());
+        let signers = (0..100).map(|_| InMemorySigner::new()).collect::<Vec<_>>();
+        let authorities = signers.iter().map(|s| AuthorityProposal{public_key: s.public_key(), amount: 1}).collect::<Vec<_>>();
+
+        let genesis = BeaconBlock::new(0, CryptoHash::default(), MerkleHash::default(), vec![]);
+        let bc = BlockChain::new(genesis.clone(), storage.clone());
+        let mut blocks: HashMap<u32, CryptoHash> = HashMap::new();
+        blocks.insert(0, genesis.hash());
+
+        for (self_id, parent_id, sign_count) in graph.iter() {
+            let parent = bc.get_block_by_hash(blocks.get(parent_id).unwrap()).unwrap();
+            let mut block = BeaconBlock::new(parent.header.index() + 1, parent.hash(), MerkleHash::default(), vec![]);
+            for i in 0..*sign_count {
+                block.header.sign(&authorities, &signers[i as usize]);
+            }
+            assert!(block.header.verify_signature(&authorities));
+            block.update_weight(parent.weight, &authorities);
+            blocks.insert(*self_id, block.hash());
+            assert_eq!(bc.insert_block(block.clone()), false);
+        }
+        let best_hash = bc.best_block().hash();
+        for i in 0..=graph.len() {
+            println!("{} {}", i, blocks[&(i as u32)]);
+        }
+        assert_eq!(best_hash, *blocks.get(&expect).unwrap());
+    }
+
+    #[test]
+    fn test_fork_choice_rule() {
+        // specific examples from https://ethresear.ch/t/immediate-message-driven-ghost-as-ffg-fork-choice-rule/2561
+        test_fork_choice_rule_helper(vec![(1, 0, 15), (2, 1, 16), (3, 2, 65), (4, 0, 55), (5, 4, 56)], 5);
+        test_fork_choice_rule_helper(vec![(4, 0, 55), (5, 4, 56), (1, 0, 15), (2, 1, 16), (3, 2, 65)], 5);
+
+        test_fork_choice_rule_helper(vec![(1, 0, 15), (2, 0, 65), (3, 1, 51), (4, 2, 20)], 4);
+
+        test_fork_choice_rule_helper(vec![(1, 0, 40), (2, 0, 60), (3, 1, 51), (4, 2, 5)], 3);
     }
 }

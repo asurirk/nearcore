@@ -211,7 +211,7 @@ mod test {
             bc.genesis_hash,
             MerkleHash::default(),
             MerkleHash::default(),
-            primitives::signature::DEFAULT_SIGNATURE,
+            vec![],
             vec![true, false, true, true, true],
             vec![],
         );

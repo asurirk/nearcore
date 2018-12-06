@@ -151,6 +151,7 @@ impl Header for MockBlockHeader {
 impl Block for MockBlock {
     type Header = MockBlockHeader;
     type Body = ();
+    type Weight = u64;
     fn header(&self) -> &Self::Header {
         &MockBlockHeader {}
     }
@@ -166,6 +167,7 @@ impl Block for MockBlock {
     fn hash(&self) -> CryptoHash {
         CryptoHash::default()
     }
+    fn weight(&self) -> Self::Weight { self.header().index() }
 }
 
 #[derive(Default)]
